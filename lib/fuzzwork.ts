@@ -1,4 +1,5 @@
 import 'server-only';
+import type { AggSide, Aggregate } from './types';
 
 // Fuzzwork market aggregates: pre-reduced best buy/sell (+ volume, percentile)
 // per type per region, refreshed ~30 min. Used for the broad arbitrage scan so
@@ -12,21 +13,6 @@ function userAgent(): string {
   return process.env.ESI_CONTACT
     ? `eve-arbitrage/0.1 (+${process.env.ESI_CONTACT})`
     : 'eve-arbitrage/0.1';
-}
-
-export interface AggSide {
-  weightedAverage: number;
-  max: number;
-  min: number;
-  median: number;
-  volume: number;
-  orderCount: number;
-  percentile: number;
-}
-
-export interface Aggregate {
-  buy: AggSide;
-  sell: AggSide;
 }
 
 function toSide(o: unknown): AggSide {
