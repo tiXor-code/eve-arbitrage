@@ -6,7 +6,7 @@ another. Opportunities are ranked by **realistic profit per trip** given your
 ship's cargo (m³) and ISK budget. Filling an existing buy order costs sales tax
 only — no broker fee.
 
-Live: _(set after first deploy)_
+Live: <https://eve-arbitrage-six.vercel.app>
 
 ## How it works
 
