@@ -1,23 +1,30 @@
 import { NextResponse } from 'next/server';
 import { HUB_BY_KEY, HUB_KEYS } from '@/lib/hubs';
-import { getRegionAggregates } from '@/lib/market-cache';
+import { getHubAggregates } from '@/lib/market-cache';
 import { allTypeIds, getType } from '@/lib/types-data';
 import { rankOpportunities, salesTaxRate } from '@/lib/arbitrage';
-import type { Aggregate, PriceBasis, TypeQuotes } from '@/lib/types';
+import { computeExactTrade, exactToOpportunity, mapLimit } from '@/lib/depth';
+import type { Aggregate, Opportunity, PriceBasis, TypeQuotes } from '@/lib/types';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 export const maxDuration = 60;
 
+// How many Fuzzwork-ranked candidates get the exact ESI depth-walk. Generous
+// enough that the true top opportunities are in the set; bounded to keep ESI
+// usage sane. Each candidate costs ~2 cached ESI calls.
+const CANDIDATES = 200;
+const DEPTH_CONCURRENCY = 12;
+
 interface ScanBody {
-  sourceHub?: string; // hub key or 'any'
-  destHub?: string; // hub key or 'any'
+  sourceHub?: string;
+  destHub?: string;
   cargoM3?: number;
   budgetIsk?: number;
   accountingLevel?: number;
   priceBasis?: PriceBasis;
-  minMarginPct?: number; // percent (e.g. 5), converted to fraction
-  minTripProfit?: number; // ISK
+  minMarginPct?: number;
+  minTripProfit?: number;
   minVolume?: number;
   limit?: number;
 }
@@ -56,20 +63,20 @@ export async function POST(req: Request): Promise<Response> {
   const cargoM3 = Math.max(0, num(body.cargoM3, 60000));
   const budgetIsk = Math.max(0, num(body.budgetIsk, 500_000_000));
   const accountingLevel = Math.max(0, Math.min(5, num(body.accountingLevel, 0)));
+  const taxRate = salesTaxRate(accountingLevel);
   const priceBasis: PriceBasis = body.priceBasis === 'best' ? 'best' : 'percentile';
   const minMarginPct = Math.max(0, num(body.minMarginPct, 5)) / 100;
   const minTripProfit = Math.max(0, num(body.minTripProfit, 0));
   const minVolume = Math.max(0, num(body.minVolume, 1));
-  const limit = Math.max(1, Math.min(500, num(body.limit, 200)));
+  const limit = Math.max(1, Math.min(200, num(body.limit, 50)));
 
-  // Fetch a full aggregate snapshot for every region we need, in parallel.
+  // Stage 1: cheap Fuzzwork station aggregates -> rough candidates.
   const hubSet = [...new Set([...sourceHubs, ...destHubs])];
   let aggByHub: Map<string, Map<number, Aggregate>>;
   try {
     const entries = await Promise.all(
       hubSet.map(
-        async (k) =>
-          [k, await getRegionAggregates(HUB_BY_KEY[k].regionId)] as const,
+        async (k) => [k, await getHubAggregates(HUB_BY_KEY[k].locationId)] as const,
       ),
     );
     aggByHub = new Map(entries);
@@ -80,7 +87,6 @@ export async function POST(req: Request): Promise<Response> {
     );
   }
 
-  // Assemble per-type quotes across the requested hubs.
   const quotes: TypeQuotes[] = [];
   for (const id of allTypeIds()) {
     const t = getType(id);
@@ -97,7 +103,9 @@ export async function POST(req: Request): Promise<Response> {
     if (any) quotes.push({ typeId: id, name: t.name, unitVolume: t.volume, hubs });
   }
 
-  const opportunities = rankOpportunities(quotes, {
+  // Rough ranking gates candidates. Because percentile margin >= achievable
+  // margin, this never drops a genuinely profitable item from the candidate set.
+  const candidates = rankOpportunities(quotes, {
     sourceHubs,
     destHubs,
     cargoM3,
@@ -105,14 +113,43 @@ export async function POST(req: Request): Promise<Response> {
     accountingLevel,
     priceBasis,
     minMarginPct,
-    minTripProfit,
+    minTripProfit: 0,
     minVolume,
-    limit,
+    limit: CANDIDATES,
   });
+
+  // Stage 2: exact depth-walk over real ESI order books for each candidate.
+  let exact: (Opportunity | null)[];
+  try {
+    exact = await mapLimit(candidates, DEPTH_CONCURRENCY, async (c) => {
+      try {
+        const trade = await computeExactTrade(c.typeId, c.sourceHub, c.destHub, {
+          cargoM3,
+          budgetIsk,
+          taxRate,
+        });
+        return exactToOpportunity(trade);
+      } catch {
+        return null;
+      }
+    });
+  } catch (err) {
+    return NextResponse.json(
+      { error: `order-book walk failed: ${(err as Error).message}` },
+      { status: 502 },
+    );
+  }
+
+  const opportunities = exact
+    .filter((o): o is Opportunity => o !== null)
+    .filter((o) => o.marginPct >= minMarginPct && o.tripProfit >= minTripProfit)
+    .sort((a, b) => b.tripProfit - a.tripProfit)
+    .slice(0, limit);
 
   return NextResponse.json({
     generatedAt: new Date().toISOString(),
     count: opportunities.length,
+    candidatesWalked: candidates.length,
     opportunities,
     params: {
       sourceHub: body.sourceHub ?? 'any',
@@ -120,7 +157,7 @@ export async function POST(req: Request): Promise<Response> {
       cargoM3,
       budgetIsk,
       accountingLevel,
-      salesTaxRate: salesTaxRate(accountingLevel),
+      salesTaxRate: taxRate,
       priceBasis,
     },
   });

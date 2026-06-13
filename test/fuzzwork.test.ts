@@ -26,7 +26,7 @@ describe('fuzzwork', () => {
     );
     vi.stubGlobal('fetch', fetchMock);
 
-    const out = await fetchAggregates(10000002, [34]);
+    const out = await fetchAggregates({ region: 10000002 }, [34]);
     expect(out.get(34)?.buy.max).toBe(6.5);
     expect(out.get(34)?.sell.min).toBe(7);
     expect(out.get(34)?.buy.orderCount).toBe(12);
@@ -38,13 +38,13 @@ describe('fuzzwork', () => {
     vi.stubGlobal('fetch', fetchMock);
 
     const ids = Array.from({ length: 1200 }, (_, i) => i + 1);
-    await fetchAggregates(10000002, ids);
+    await fetchAggregates({ station: 60003760 }, ids);
     // 1200 ids / 500 per batch => 3 requests
     expect(fetchMock).toHaveBeenCalledTimes(3);
   });
 
   it('throws on a non-ok response', async () => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(mockResponse({}, false, 503)));
-    await expect(fetchAggregates(10000002, [34])).rejects.toThrow(/Fuzzwork 503/);
+    await expect(fetchAggregates({ region: 10000002 }, [34])).rejects.toThrow(/Fuzzwork 503/);
   });
 });

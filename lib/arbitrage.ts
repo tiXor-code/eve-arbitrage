@@ -1,10 +1,12 @@
 import type {
   Aggregate,
+  DepthResult,
   Limiter,
   Opportunity,
   PriceBasis,
   RankParams,
   TypeQuotes,
+  WalkOrder,
 } from './types';
 
 // Core arbitrage math. Pure and dependency-free so it can be unit-tested and
@@ -150,4 +152,90 @@ export function rankOpportunities(
 
   out.sort((a, b) => b.tripProfit - a.tripProfit);
   return out.slice(0, params.limit ?? 200);
+}
+
+export interface WalkParams {
+  unitVolume: number;
+  cargoM3: number;
+  budgetIsk: number;
+  taxRate: number;
+}
+
+// Exact depth-walk over real order books. Buys from the cheapest source sell
+// orders and sells into the highest destination buy orders, adding units while
+// the marginal margin stays positive and cargo/capital allow. Because buy price
+// rises and sell price falls as you walk, marginal margin is monotonically
+// non-increasing, so this greedy fill is optimal. Inputs are expected pre-sorted
+// (sells ascending, buys descending) but we sort defensively.
+export function simulateTrade(
+  sells: WalkOrder[],
+  buys: WalkOrder[],
+  p: WalkParams,
+): DepthResult {
+  const maxByCargo =
+    p.unitVolume > 0
+      ? Math.floor(p.cargoM3 / p.unitVolume)
+      : Number.POSITIVE_INFINITY;
+
+  const S = [...sells].sort((a, b) => a.price - b.price);
+  const B = [...buys].sort((a, b) => b.price - a.price);
+
+  const totalSell = S.reduce((s, o) => s + o.volume, 0);
+  const cap = Math.min(maxByCargo, totalSell);
+  // Drop buy orders whose minimum lot we could never satisfy.
+  const Bf = B.filter((o) => (o.minVolume ?? 1) <= cap);
+
+  let units = 0;
+  let cost = 0;
+  let revenue = 0;
+  let si = 0;
+  let bi = 0;
+  let sR = S[0]?.volume ?? 0;
+  let bR = Bf[0]?.volume ?? 0;
+  let stop: 'margin' | 'supply' | 'cargo' | 'capital' = 'supply';
+
+  while (si < S.length && bi < Bf.length) {
+    const sp = S[si].price;
+    const bp = Bf[bi].price;
+    if (bp * (1 - p.taxRate) - sp <= 0) {
+      stop = 'margin';
+      break;
+    }
+    const affordable = Math.floor((p.budgetIsk - cost) / sp);
+    let qty = Math.min(sR, bR, maxByCargo - units, affordable);
+    if (qty <= 0) {
+      stop = affordable <= 0 ? 'capital' : units >= maxByCargo ? 'cargo' : 'supply';
+      break;
+    }
+    units += qty;
+    cost += qty * sp;
+    revenue += qty * bp;
+    sR -= qty;
+    bR -= qty;
+    if (sR === 0) {
+      si++;
+      sR = S[si]?.volume ?? 0;
+    }
+    if (bR === 0) {
+      bi++;
+      bR = Bf[bi]?.volume ?? 0;
+    }
+  }
+
+  let limiter: Limiter = 'liquidity';
+  if (units === maxByCargo) limiter = 'cargo';
+  else if (stop === 'capital') limiter = 'capital';
+  else limiter = 'liquidity'; // ran out of orders or margin went non-positive
+
+  const profit = revenue * (1 - p.taxRate) - cost;
+  return {
+    units,
+    cost,
+    revenue,
+    profit,
+    avgBuy: units ? cost / units : 0,
+    avgSell: units ? revenue / units : 0,
+    taxRate: p.taxRate,
+    limiter,
+  };
 }

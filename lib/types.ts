@@ -62,6 +62,39 @@ export interface Opportunity {
   limiter: Limiter;
 }
 
+// --- Drill-down (exact order-book depth) ---
+
+export interface WalkOrder {
+  price: number;
+  volume: number;
+  minVolume?: number;
+}
+
+export interface DepthResult {
+  units: number;
+  cost: number; // total ISK spent buying
+  revenue: number; // gross ISK from buy orders (pre-tax)
+  profit: number; // net after sales tax
+  avgBuy: number;
+  avgSell: number;
+  taxRate: number;
+  limiter: Limiter;
+}
+
+export interface LadderLevel {
+  price: number;
+  volume: number;
+  cumVolume: number;
+}
+
+export interface OrderbookResponse {
+  type: { id: number; name: string; unitVolume: number };
+  source: { hub: string; ladder: LadderLevel[]; totalVolume: number };
+  dest: { hub: string; ladder: LadderLevel[]; totalVolume: number };
+  result: DepthResult;
+  params: { cargoM3: number; budgetIsk: number; accountingLevel: number };
+}
+
 export interface ScanResponse {
   generatedAt: string;
   count: number;

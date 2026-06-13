@@ -5,6 +5,7 @@ import type { Opportunity, PriceBasis, ScanResponse } from '@/lib/types';
 import { HUBS } from '@/lib/hubs';
 import { salesTaxRate } from '@/lib/arbitrage';
 import ResultsTable from './ResultsTable';
+import OrderBookDrawer from './OrderBookDrawer';
 
 const HUB_OPTIONS = [{ key: 'any', name: 'Any' }, ...HUBS.map((h) => ({ key: h.key, name: h.name }))];
 
@@ -47,6 +48,7 @@ export default function Scanner() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<ScanResponse | null>(null);
+  const [selected, setSelected] = useState<Opportunity | null>(null);
 
   function set<K extends keyof Controls>(key: K, value: Controls[K]) {
     setC((prev) => ({ ...prev, [key]: value }));
@@ -200,7 +202,17 @@ export default function Scanner() {
       {result && !loading && (
         <ResultsTable
           opportunities={result.opportunities as Opportunity[]}
-          // drill-down wired in Phase 3
+          onSelect={setSelected}
+        />
+      )}
+
+      {selected && (
+        <OrderBookDrawer
+          opp={selected}
+          cargoM3={c.cargoM3}
+          budgetIsk={c.budgetM * 1_000_000}
+          accountingLevel={c.accountingLevel}
+          onClose={() => setSelected(null)}
         />
       )}
     </div>

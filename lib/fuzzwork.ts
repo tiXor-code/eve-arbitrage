@@ -29,15 +29,24 @@ function toSide(o: unknown): AggSide {
   };
 }
 
+// A market scope is either a whole region or a single station. We scan with
+// station scope so prices reflect what you can actually buy/sell AT the hub
+// (a hauler trades at the station, not at scattered region stations).
+export type Scope = { region: number } | { station: number };
+
+function scopeQuery(s: Scope): string {
+  return 'region' in s ? `region=${s.region}` : `station=${s.station}`;
+}
+
 async function fetchBatch(
-  regionId: number,
+  scope: Scope,
   ids: number[],
 ): Promise<Map<number, Aggregate>> {
-  const url = `${FUZZ_BASE}?region=${regionId}&types=${ids.join(',')}`;
+  const url = `${FUZZ_BASE}?${scopeQuery(scope)}&types=${ids.join(',')}`;
   const res = await fetch(url, { headers: { 'User-Agent': userAgent() } });
   if (!res.ok) {
     throw new Error(
-      `Fuzzwork ${res.status} for region ${regionId} (${ids.length} types)`,
+      `Fuzzwork ${res.status} for ${scopeQuery(scope)} (${ids.length} types)`,
     );
   }
   const json = (await res.json()) as Record<
@@ -51,10 +60,10 @@ async function fetchBatch(
   return out;
 }
 
-// Fetch aggregates for many types in one region, batching to keep URLs short
+// Fetch aggregates for many types in one scope, batching to keep URLs short
 // and capping concurrency to stay polite.
 export async function fetchAggregates(
-  regionId: number,
+  scope: Scope,
   typeIds: number[],
 ): Promise<Map<number, Aggregate>> {
   const batches: number[][] = [];
@@ -64,11 +73,11 @@ export async function fetchAggregates(
   const result = new Map<number, Aggregate>();
   for (let i = 0; i < batches.length; i += CONCURRENCY) {
     const maps = await Promise.all(
-      batches.slice(i, i + CONCURRENCY).map((b) => fetchBatch(regionId, b)),
+      batches.slice(i, i + CONCURRENCY).map((b) => fetchBatch(scope, b)),
     );
     for (const m of maps) for (const [k, v] of m) result.set(k, v);
   }
   return result;
 }
 
-export const __test = { BATCH, fetchBatch };
+export const __test = { BATCH };
