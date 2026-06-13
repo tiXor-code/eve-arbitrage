@@ -1,0 +1,21 @@
+# dependencies
+node_modules/
+
+# next.js
+.next/
+out/
+
+# generated static data (built at prebuild from the EVE SDE, never committed)
+data/types.json
+
+# testing
+test-results/
+playwright-report/
+coverage/
+
+# misc
+.DS_Store
+*.tsbuildinfo
+next-env.d.ts
+.env*.local
+.vercel
