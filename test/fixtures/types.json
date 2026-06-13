@@ -1,0 +1,10 @@
+{
+  "generatedAt": "2026-06-14T00:00:00.000Z",
+  "source": "fixture",
+  "count": 3,
+  "types": {
+    "34": { "name": "Tritanium", "volume": 0.01, "groupId": 18, "marketGroupId": 1857 },
+    "44992": { "name": "PLEX", "volume": 0.01, "groupId": 1875, "marketGroupId": 2003 },
+    "11399": { "name": "Morphite", "volume": 0.01, "groupId": 18, "marketGroupId": 1858 }
+  }
+}
