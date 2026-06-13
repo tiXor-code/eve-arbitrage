@@ -1,11 +1,12 @@
 'use client';
 
 import { useState } from 'react';
-import type { Opportunity, PriceBasis, ScanResponse } from '@/lib/types';
+import type { AuthMe, Opportunity, PriceBasis, ScanResponse } from '@/lib/types';
 import { HUBS } from '@/lib/hubs';
 import { salesTaxRate } from '@/lib/arbitrage';
 import ResultsTable from './ResultsTable';
 import OrderBookDrawer from './OrderBookDrawer';
+import AuthBar from './AuthBar';
 
 const HUB_OPTIONS = [{ key: 'any', name: 'Any' }, ...HUBS.map((h) => ({ key: h.key, name: h.name }))];
 
@@ -54,6 +55,15 @@ export default function Scanner() {
     setC((prev) => ({ ...prev, [key]: value }));
   }
 
+  // On EVE login, pre-fill tax (from Accounting skill) and budget (from wallet).
+  function applyAuth(me: AuthMe) {
+    setC((prev) => ({
+      ...prev,
+      accountingLevel: me.accountingLevel ?? prev.accountingLevel,
+      budgetM: me.walletIsk ? Math.round(me.walletIsk / 1_000_000) : prev.budgetM,
+    }));
+  }
+
   async function scan() {
     setLoading(true);
     setError(null);
@@ -87,6 +97,9 @@ export default function Scanner() {
 
   return (
     <div>
+      <div className="mb-3 flex justify-end">
+        <AuthBar onAuth={applyAuth} />
+      </div>
       <div className="grid grid-cols-2 gap-3 rounded-lg border border-[var(--border)] bg-[var(--panel)] p-4 sm:grid-cols-4 lg:grid-cols-8">
         <Field label="Buy at (source)">
           <select

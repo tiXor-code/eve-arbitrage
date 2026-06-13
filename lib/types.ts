@@ -95,6 +95,16 @@ export interface OrderbookResponse {
   params: { cargoM3: number; budgetIsk: number; accountingLevel: number };
 }
 
+export interface AuthMe {
+  authenticated: boolean;
+  configured: boolean;
+  characterId?: number;
+  name?: string;
+  accountingLevel?: number;
+  salesTaxRate?: number;
+  walletIsk?: number;
+}
+
 export interface ScanResponse {
   generatedAt: string;
   count: number;

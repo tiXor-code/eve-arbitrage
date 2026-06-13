@@ -119,3 +119,36 @@ export async function getEsiType(typeId: number): Promise<EsiType> {
   const { data } = await esiGet<EsiType>(`/latest/universe/types/${typeId}/`);
   return data;
 }
+
+// --- Authenticated character endpoints (SSO) ---
+
+const ACCOUNTING_SKILL_ID = 16622;
+
+interface EsiSkills {
+  skills: { skill_id: number; active_skill_level: number }[];
+}
+
+// Trained Accounting level (0-5), which reduces sales tax.
+export async function getAccountingLevel(
+  characterId: number,
+  token: string,
+): Promise<number> {
+  const { data } = await esiGet<EsiSkills>(
+    `/latest/characters/${characterId}/skills/`,
+    { token },
+  );
+  const acc = data.skills?.find((s) => s.skill_id === ACCOUNTING_SKILL_ID);
+  return acc?.active_skill_level ?? 0;
+}
+
+// Wallet balance in ISK.
+export async function getWalletBalance(
+  characterId: number,
+  token: string,
+): Promise<number> {
+  const { data } = await esiGet<number>(
+    `/latest/characters/${characterId}/wallet/`,
+    { token },
+  );
+  return Number(data) || 0;
+}
